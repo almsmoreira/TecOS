@@ -261,10 +261,58 @@ app.post('/api/auth/register', async (req, res) => {
 app.get('/api/auth/me', authMiddleware, async (req, res) => {
   try {
     const { rows } = await pool.query('SELECT id,name,username,role FROM users WHERE id=$1', [req.user.id]);
-    res.json(rows[0] || null);
+    // frontend espera { user: {...} }
+    res.json({ user: rows[0] || null });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
+});
+
+// ─── Rota /api/data — carrega/salva tudo de uma vez (compatibilidade App.jsx) ─
+app.get('/api/data', authMiddleware, async (req, res) => {
+  try {
+    const [usersR, clientsR, equipR, osR] = await Promise.all([
+      pool.query('SELECT id,name,username,role FROM users ORDER BY name'),
+      pool.query('SELECT * FROM clients ORDER BY name'),
+      pool.query(`SELECT e.*, c.name as client_name FROM equipment e LEFT JOIN clients c ON e.client_id=c.id ORDER BY c.name, e.brand`),
+      pool.query(`SELECT o.*, c.name as client_name, e.brand, e.model, e.type as equip_type, u.name as technician_name
+                  FROM orders o
+                  LEFT JOIN clients c ON o.client_id=c.id
+                  LEFT JOIN equipment e ON o.equipment_id=e.id
+                  LEFT JOIN users u ON o.technician_id=u.id
+                  ORDER BY o.created_at DESC`),
+    ]);
+
+    // normaliza campos para o formato que o frontend usa (camelCase)
+    const normalizeOS = (o) => ({
+      ...o,
+      clientId:      o.client_id,
+      equipmentId:   o.equipment_id,
+      technicianId:  o.technician_id,
+      technicianNotes: o.technician_notes,
+      createdAt:     o.created_at,
+      updatedAt:     o.updated_at,
+      history:       [],
+      photos:        [],
+    });
+
+    const normalizeEquip = (e) => ({
+      ...e,
+      clientId: e.client_id,
+    });
+
+    res.json({
+      users:     usersR.rows,
+      clients:   clientsR.rows,
+      equipment: equipR.rows.map(normalizeEquip),
+      os:        osR.rows.map(normalizeOS),
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/data', authMiddleware, async (req, res) => {
+  // O frontend faz auto-save via esta rota — ignoramos pois gerenciamos pelo banco
+  res.json({ ok: true });
 });
 
 // ─── Usuários ─────────────────────────────────────────────────────────────────
