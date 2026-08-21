@@ -1621,6 +1621,306 @@ async function checkLicenseExpiry() {
   } catch (e) { console.error('[LicenseCheck]', e.message); }
 }
 
+// ─── Aliases de rotas (compatibilidade com frontend original) ─────────────────
+
+// /api/os/:id → /api/orders/:id
+app.delete('/api/os/:id', authMiddleware, async (req, res) => {
+  await pool.query('DELETE FROM orders WHERE id=$1', [req.params.id]);
+  res.json({ ok: true });
+});
+
+// /api/agents → /api/agent/tokens
+app.get('/api/agents', authMiddleware, async (req, res) => {
+  const { rows } = await pool.query(
+    `SELECT at.*, e.brand, e.model, e.device_name, c.name as client_name
+     FROM agent_tokens at
+     LEFT JOIN equipment e ON at.equipment_id=e.id
+     LEFT JOIN clients c ON e.client_id=c.id
+     WHERE at.active=true
+     ORDER BY at.last_checkin DESC NULLS LAST`
+  );
+  res.json(rows);
+});
+
+// /api/billings → /api/billing
+app.get('/api/billings', authMiddleware, async (req, res) => {
+  const { month, client_id, status } = req.query;
+  let q = `SELECT b.*, c.name as client_name, c.phone, c.email, c.monthly_value
+           FROM billings b LEFT JOIN clients c ON b.client_id=c.id`;
+  const where = []; const params = [];
+  if (month)     { where.push(`b.month=$${params.length+1}`);     params.push(month); }
+  if (client_id) { where.push(`b.client_id=$${params.length+1}`); params.push(client_id); }
+  if (status)    { where.push(`b.status=$${params.length+1}`);    params.push(status); }
+  if (where.length) q += ' WHERE ' + where.join(' AND ');
+  q += ' ORDER BY c.name';
+  const { rows } = await pool.query(q, params);
+  res.json(rows);
+});
+
+app.post('/api/billings/generate', authMiddleware, async (req, res) => {
+  const { month } = req.body;
+  try {
+    const { rows: clients } = await pool.query(
+      `SELECT * FROM clients WHERE client_type IN ('contrato','mensalista') AND monthly_value > 0`
+    );
+    let created = 0, skipped = 0;
+    for (const c of clients) {
+      const exists = await pool.query('SELECT id FROM billings WHERE client_id=$1 AND month=$2', [c.id, month]);
+      if (exists.rows.length) { skipped++; continue; }
+      const id = Date.now() + Math.floor(Math.random()*1000);
+      await pool.query(
+        `INSERT INTO billings (id,client_id,month,amount,status) VALUES ($1,$2,$3,$4,'pendente')`,
+        [id, c.id, month, c.monthly_value]
+      );
+      created++;
+    }
+    res.json({ created, skipped });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.put('/api/billings/:id', authMiddleware, async (req, res) => {
+  const { status, notes, paid_at, send_method, amount, sendMethod } = req.body;
+  try {
+    const { rows } = await pool.query(
+      `UPDATE billings SET status=$1,notes=$2,paid_at=$3,send_method=$4,amount=$5 WHERE id=$6 RETURNING *`,
+      [status, notes||'', paid_at||null, send_method||sendMethod||'whatsapp', amount, req.params.id]
+    );
+    res.json(rows[0]);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/api/billings/:id', authMiddleware, async (req, res) => {
+  await pool.query('DELETE FROM billings WHERE id=$1', [req.params.id]);
+  res.json({ ok: true });
+});
+
+app.post('/api/billings/:id/send', authMiddleware, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT b.*, c.name as client_name, c.phone, c.email
+       FROM billings b LEFT JOIN clients c ON b.client_id=c.id WHERE b.id=$1`,
+      [req.params.id]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Cobrança não encontrada' });
+    const b = rows[0];
+    const method = req.body.method || 'whatsapp';
+    if (method === 'whatsapp') {
+      const phone = (b.phone || '').replace(/\D/g, '');
+      if (!phone) return res.status(400).json({ error: 'Cliente sem telefone cadastrado' });
+      const pix = gerarPixPayload(PIX_KEY, PIX_NAME, PIX_CITY, b.amount, `TECHOS-${b.id}`);
+      const msg = `Olá ${b.client_name}! 👋\n\nSua mensalidade referente ao mês *${b.month}* está disponível.\n\n💰 Valor: R$ ${parseFloat(b.amount).toFixed(2)}\n\nPIX Copia e Cola:\n\`${pix}\`\n\nQualquer dúvida, entre em contato!\n\n*ALMS Tecnologia*`;
+      await evolutionSend(phone, msg);
+    }
+    await pool.query(`UPDATE billings SET sent_at=now(),send_method=$1 WHERE id=$2`, [method, b.id]);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// /api/billings/summary → MRR dos clientes contrato
+app.get('/api/billings/summary', authMiddleware, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT COALESCE(SUM(monthly_value),0) as mrr FROM clients WHERE client_type IN ('contrato','mensalista') AND monthly_value > 0`
+    );
+    res.json({ mrr: parseFloat(rows[0].mrr) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// /api/expenses/summary
+app.get('/api/expenses/summary', authMiddleware, async (req, res) => {
+  const { month } = req.query;
+  const m = month || new Date().toISOString().slice(0, 7);
+  try {
+    const { rows } = await pool.query(
+      `SELECT
+        COALESCE(SUM(amount),0) as total,
+        COALESCE(SUM(CASE WHEN status='pago' THEN amount ELSE 0 END),0) as paid,
+        COALESCE(SUM(CASE WHEN status='pendente' AND due_date >= CURRENT_DATE THEN amount ELSE 0 END),0) as pending,
+        COALESCE(SUM(CASE WHEN status='pendente' AND due_date < CURRENT_DATE THEN amount ELSE 0 END),0) as overdue
+       FROM expenses WHERE to_char(due_date,'YYYY-MM')=$1`, [m]
+    );
+    res.json(rows[0]);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// /api/financial/summary → dashboard financeiro completo
+app.get('/api/financial/summary', authMiddleware, async (req, res) => {
+  try {
+    const [monthly, byClient, byTech, mrrRow, pendingRow] = await Promise.all([
+      pool.query(
+        `SELECT to_char(updated_at,'YYYY-MM') as month, COALESCE(SUM(budget),0) as total, COUNT(*) as count
+         FROM orders WHERE status='concluido' AND paid=true
+         AND updated_at >= now() - interval '12 months'
+         GROUP BY 1 ORDER BY 1`
+      ),
+      pool.query(
+        `SELECT c.name, COALESCE(SUM(o.budget),0) as total
+         FROM orders o LEFT JOIN clients c ON o.client_id=c.id
+         WHERE o.status='concluido' AND o.paid=true
+         GROUP BY c.name ORDER BY total DESC LIMIT 8`
+      ),
+      pool.query(
+        `SELECT u.name, COALESCE(SUM(o.budget),0) as total
+         FROM orders o LEFT JOIN users u ON o.technician_id=u.id
+         WHERE o.status='concluido' AND o.paid=true
+         GROUP BY u.name ORDER BY total DESC`
+      ),
+      pool.query(`SELECT COALESCE(SUM(monthly_value),0) as mrr FROM clients WHERE client_type IN ('contrato','mensalista') AND monthly_value > 0`),
+      pool.query(`SELECT COALESCE(SUM(budget),0) as total FROM orders WHERE status NOT IN ('concluido','cancelado')`),
+    ]);
+    res.json({
+      monthly:       monthly.rows,
+      byClient:      byClient.rows,
+      byTech:        byTech.rows,
+      mrr:           parseFloat(mrrRow.rows[0].mrr),
+      pendingAmount: parseFloat(pendingRow.rows[0].total),
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// /api/settings/config → /api/config
+app.get('/api/settings/config', authMiddleware, async (req, res) => {
+  const { rows } = await pool.query('SELECT * FROM config');
+  const cfg = {};
+  rows.forEach(r => { cfg[r.key] = r.value; });
+  res.json(cfg);
+});
+
+app.post('/api/settings/config', authMiddleware, async (req, res) => {
+  try {
+    for (const [key, value] of Object.entries(req.body)) {
+      await pool.query(
+        'INSERT INTO config (key,value) VALUES ($1,$2) ON CONFLICT (key) DO UPDATE SET value=$2',
+        [key, value]
+      );
+    }
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// /api/vault/:clientId → lista credenciais de um cliente
+app.get('/api/vault/:clientId', authMiddleware, async (req, res) => {
+  // se for um número, é client_id; se não, cai no próximo handler
+  const clientId = parseInt(req.params.clientId);
+  if (isNaN(clientId)) return res.status(404).json({ error: 'Not found' });
+  try {
+    const { rows } = await pool.query(
+      `SELECT vc.*, c.name as client_name FROM vault_credentials vc
+       LEFT JOIN clients c ON vc.client_id=c.id
+       WHERE vc.client_id=$1 ORDER BY vc.title`, [clientId]
+    );
+    const result = rows.map(r => ({
+      ...r,
+      username: vaultDecrypt(r.username),
+      password: vaultDecrypt(r.password),
+      notes:    vaultDecrypt(r.notes),
+    }));
+    await auditLog(req.user.id, req.user.username, 'VIEW', 'vault', clientId, {}, req.ip);
+    res.json(result);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// /api/vault/credential → criar credencial
+app.post('/api/vault/credential', authMiddleware, async (req, res) => {
+  const { client_id, title, username, password, url, notes, category } = req.body;
+  try {
+    const id = Date.now();
+    const { rows } = await pool.query(
+      `INSERT INTO vault_credentials (id,client_id,title,username,password,url,notes,category)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+      [id, client_id, title, vaultEncrypt(username||''), vaultEncrypt(password||''),
+       url||'', vaultEncrypt(notes||''), category||'geral']
+    );
+    await auditLog(req.user.id, req.user.username, 'CREATE', 'vault', id, { title, client_id }, req.ip);
+    res.json({ ...rows[0], username: username||'', password: password||'', notes: notes||'' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.put('/api/vault/credential/:id', authMiddleware, async (req, res) => {
+  const { title, username, password, url, notes, category } = req.body;
+  try {
+    const { rows } = await pool.query(
+      `UPDATE vault_credentials SET title=$1,username=$2,password=$3,url=$4,notes=$5,category=$6
+       WHERE id=$7 RETURNING *`,
+      [title, vaultEncrypt(username||''), vaultEncrypt(password||''),
+       url||'', vaultEncrypt(notes||''), category||'geral', req.params.id]
+    );
+    res.json({ ...rows[0], username: username||'', password: password||'', notes: notes||'' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/api/vault/credential/:id', authMiddleware, async (req, res) => {
+  await pool.query('DELETE FROM vault_credentials WHERE id=$1', [req.params.id]);
+  await auditLog(req.user.id, req.user.username, 'DELETE', 'vault', req.params.id, {}, req.ip);
+  res.json({ ok: true });
+});
+
+// /api/vault/file → arquivos do vault
+app.post('/api/vault/file', authMiddleware, upload.single('file'), async (req, res) => {
+  try {
+    let data, mime_type, name, file_type, credential_id, client_id;
+    if (req.file) {
+      data = req.file.buffer.toString('base64');
+      mime_type = req.file.mimetype;
+      name = req.file.originalname;
+      file_type = mime_type.startsWith('image') ? 'image' : 'document';
+    } else {
+      ({ data, mime_type, name, file_type, credential_id, client_id } = req.body);
+    }
+    if (!client_id && credential_id) {
+      const cr = await pool.query('SELECT client_id FROM vault_credentials WHERE id=$1', [credential_id]);
+      if (cr.rows.length) client_id = cr.rows[0].client_id;
+    }
+    const id = Date.now();
+    const { rows } = await pool.query(
+      `INSERT INTO vault_files (id,client_id,credential_id,name,file_type,data,mime_type)
+       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id,name,file_type,mime_type,created_at`,
+      [id, client_id, credential_id||null, name, file_type||'image', vaultEncrypt(data), mime_type||'image/png']
+    );
+    res.json(rows[0]);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/vault/file/:id', authMiddleware, async (req, res) => {
+  const { rows } = await pool.query('SELECT * FROM vault_files WHERE id=$1', [req.params.id]);
+  if (!rows.length) return res.status(404).json({ error: 'Arquivo não encontrado' });
+  res.json({ ...rows[0], data: vaultDecrypt(rows[0].data) });
+});
+
+app.delete('/api/vault/file/:id', authMiddleware, async (req, res) => {
+  await pool.query('DELETE FROM vault_files WHERE id=$1', [req.params.id]);
+  res.json({ ok: true });
+});
+
+// PATCH /api/clients/:id/type
+app.patch('/api/clients/:id/type', authMiddleware, async (req, res) => {
+  const { client_type } = req.body;
+  try {
+    const { rows } = await pool.query(
+      'UPDATE clients SET client_type=$1 WHERE id=$2 RETURNING *',
+      [client_type, req.params.id]
+    );
+    res.json(rows[0]);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/chamados/:id/convert → converte chamado em OS
+app.post('/api/chamados/:id/convert', authMiddleware, async (req, res) => {
+  try {
+    const { rows: ch } = await pool.query('SELECT * FROM chamados WHERE id=$1', [req.params.id]);
+    if (!ch.length) return res.status(404).json({ error: 'Chamado não encontrado' });
+    const c = ch[0];
+    const osId = Date.now();
+    const { rows: os } = await pool.query(
+      `INSERT INTO orders (id,client_id,description,status,technician_id)
+       VALUES ($1,$2,$3,'orcamento',$4) RETURNING *`,
+      [osId, c.client_id, c.description||c.title, c.technician_id||null]
+    );
+    await pool.query('UPDATE chamados SET os_id=$1,status=\'em_atendimento\' WHERE id=$2', [osId, req.params.id]);
+    res.json({ ok: true, os: os[0] });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ─── Servir frontend React ────────────────────────────────────────────────────
 const DIST = path.join(__dirname, 'dist');
 app.use(express.static(DIST));
