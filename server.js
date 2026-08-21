@@ -1846,25 +1846,23 @@ app.post('/api/settings/config', authMiddleware, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// /api/vault/:clientId → lista credenciais de um cliente
-app.get('/api/vault/:clientId', authMiddleware, async (req, res) => {
-  // se for um número, é client_id; se não, cai no próximo handler
+// /api/vault/:clientId → retorna { credentials, files } para o VaultModal
+app.get(`'/api/vault/:clientId'`, authMiddleware, async (req, res) => {
   const clientId = parseInt(req.params.clientId);
   if (isNaN(clientId)) return res.status(404).json({ error: 'Not found' });
   try {
-    const { rows } = await pool.query(
-      `SELECT vc.*, c.name as client_name FROM vault_credentials vc
-       LEFT JOIN clients c ON vc.client_id=c.id
-       WHERE vc.client_id=$1 ORDER BY vc.title`, [clientId]
-    );
-    const result = rows.map(r => ({
+    const [credsR, filesR] = await Promise.all([
+      pool.query(`SELECT * FROM vault_credentials WHERE client_id=$1 ORDER BY title`, [clientId]),
+      pool.query(`SELECT id,name,file_type,mime_type,created_at FROM vault_files WHERE client_id=$1 ORDER BY created_at DESC`, [clientId]),
+    ]);
+    const credentials = credsR.rows.map(r => ({
       ...r,
       username: vaultDecrypt(r.username),
       password: vaultDecrypt(r.password),
       notes:    vaultDecrypt(r.notes),
     }));
     await auditLog(req.user.id, req.user.username, 'VIEW', 'vault', clientId, {}, req.ip);
-    res.json(result);
+    res.json({ credentials, files: filesR.rows });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
