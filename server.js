@@ -641,6 +641,21 @@ app.get('/api/vault', authMiddleware, async (req, res) => {
   res.json(result);
 });
 
+// GET /api/vault/:clientId → retorna {credentials, files} para VaultModal
+app.get(`/api/vault/:clientId`, authMiddleware, async (req, res) => {
+  const clientId = parseInt(req.params.clientId);
+  if (isNaN(clientId)) return res.status(404).json({ error: 'Not found' });
+  try {
+    const [credsR, filesR] = await Promise.all([
+      pool.query(`SELECT * FROM vault_credentials WHERE client_id=$1 ORDER BY title`, [clientId]),
+      pool.query(`SELECT id,name,file_type,mime_type,created_at FROM vault_files WHERE client_id=$1 ORDER BY created_at DESC`, [clientId]),
+    ]);
+    const credentials = credsR.rows.map(r => ({ ...r, username: vaultDecrypt(r.username), password: vaultDecrypt(r.password), notes: vaultDecrypt(r.notes) }));
+    await auditLog(req.user.id, req.user.username, 'VIEW', 'vault', clientId, {}, req.ip);
+    res.json({ credentials, files: filesR.rows });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.post('/api/vault', authMiddleware, async (req, res) => {
   const { client_id, title, username, password, url, notes, category } = req.body;
   try {
@@ -1847,24 +1862,6 @@ app.post('/api/settings/config', authMiddleware, async (req, res) => {
 });
 
 // /api/vault/:clientId → retorna { credentials, files } para o VaultModal
-app.get(`'/api/vault/:clientId'`, authMiddleware, async (req, res) => {
-  const clientId = parseInt(req.params.clientId);
-  if (isNaN(clientId)) return res.status(404).json({ error: 'Not found' });
-  try {
-    const [credsR, filesR] = await Promise.all([
-      pool.query(`SELECT * FROM vault_credentials WHERE client_id=$1 ORDER BY title`, [clientId]),
-      pool.query(`SELECT id,name,file_type,mime_type,created_at FROM vault_files WHERE client_id=$1 ORDER BY created_at DESC`, [clientId]),
-    ]);
-    const credentials = credsR.rows.map(r => ({
-      ...r,
-      username: vaultDecrypt(r.username),
-      password: vaultDecrypt(r.password),
-      notes:    vaultDecrypt(r.notes),
-    }));
-    await auditLog(req.user.id, req.user.username, 'VIEW', 'vault', clientId, {}, req.ip);
-    res.json({ credentials, files: filesR.rows });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
 
 // /api/vault/credential → criar credencial
 app.post('/api/vault/credential', authMiddleware, async (req, res) => {
