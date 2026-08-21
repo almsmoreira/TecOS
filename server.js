@@ -57,6 +57,23 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
 
+
+// ─── Rate Limiter (em memória, sem dependência externa) ──────────────────────
+const rateLimitMap = new Map();
+function rateLimit({ windowMs = 900000, max = 10, message = 'Muitas tentativas' } = {}) {
+  return (req, res, next) => {
+    const key = req.ip;
+    const now = Date.now();
+    const entry = rateLimitMap.get(key) || { count: 0, resetAt: now + windowMs };
+    if (now > entry.resetAt) { entry.count = 0; entry.resetAt = now + windowMs; }
+    entry.count++;
+    rateLimitMap.set(key, entry);
+    if (entry.count > max) return res.status(429).json({ error: message });
+    next();
+  };
+}
+const loginLimiter = rateLimit({ windowMs: 900000, max: 10, message: 'Muitas tentativas de login. Aguarde 15 minutos.' });
+const agentLimiter = rateLimit({ windowMs: 60000, max: 60, message: 'Rate limit do agente excedido.' });
 // ─── Utilitários de criptografia (Vault) ─────────────────────────────────────
 const ALGO = 'aes-256-cbc';
 
@@ -224,7 +241,7 @@ async function initSchema() {
 // ═════════════════════════════════════════════════════════════════════════════
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
-app.post('/api/auth/login', async (req, res) => {
+app.post('/api/auth/login', loginLimiter, async (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) return res.status(400).json({ error: 'Dados incompletos' });
   try {
@@ -616,6 +633,24 @@ app.delete('/api/orders/:id/photos/:photoId', authMiddleware, async (req, res) =
 });
 
 // ─── Vault de Credenciais ─────────────────────────────────────────────────────
+
+// GET /api/vault/search?q= → busca global em todos os clientes
+app.get(`/api/vault/search`, authMiddleware, async (req, res) => {
+  const { q } = req.query;
+  if (!q || q.trim().length < 2) return res.json([]);
+  try {
+    const { rows } = await pool.query(
+      `SELECT vc.*, c.name as client_name FROM vault_credentials vc
+       LEFT JOIN clients c ON vc.client_id=c.id
+       WHERE vc.title ILIKE $1 OR vc.url ILIKE $1 OR vc.username ILIKE $1 OR c.name ILIKE $1
+       ORDER BY c.name, vc.title LIMIT 50`,
+      [`%${q}%`]
+    );
+    const result = rows.map(r => ({ ...r, username: vaultDecrypt(r.username), password: vaultDecrypt(r.password), notes: vaultDecrypt(r.notes) }));
+    await auditLog(req.user.id, req.user.username, 'SEARCH', 'vault', 'global', { q }, req.ip);
+    res.json(result);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
 app.get('/api/vault', authMiddleware, async (req, res) => {
   const { client_id, search, category } = req.query;
   let q = `SELECT vc.*, c.name as client_name FROM vault_credentials vc
@@ -1017,20 +1052,27 @@ app.delete('/api/licenses/:id', authMiddleware, async (req, res) => {
 });
 
 // ─── Configurações ────────────────────────────────────────────────────────────
+const SENSITIVE_CONFIG_KEYS = ['evolution_key', 'smtp_pass', 'smtp_user'];
+
 app.get('/api/config', authMiddleware, async (req, res) => {
   const { rows } = await pool.query('SELECT * FROM config');
   const cfg = {};
-  rows.forEach(r => { cfg[r.key] = r.value; });
+  rows.forEach(r => {
+    // descriptografar campos sensíveis
+    cfg[r.key] = SENSITIVE_CONFIG_KEYS.includes(r.key) ? vaultDecrypt(r.value) : r.value;
+  });
   res.json(cfg);
 });
 
 app.post('/api/config', authMiddleware, adminOnly, async (req, res) => {
-  const entries = req.body; // { key: value, ... }
+  const entries = req.body;
   try {
     for (const [key, value] of Object.entries(entries)) {
+      // criptografar campos sensíveis
+      const stored = SENSITIVE_CONFIG_KEYS.includes(key) ? vaultEncrypt(value) : value;
       await pool.query(
         'INSERT INTO config (key,value) VALUES ($1,$2) ON CONFLICT (key) DO UPDATE SET value=$2',
-        [key, value]
+        [key, stored]
       );
     }
     res.json({ ok: true });
