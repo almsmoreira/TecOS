@@ -75,26 +75,29 @@ function rateLimit({ windowMs = 900000, max = 10, message = 'Muitas tentativas' 
 const loginLimiter = rateLimit({ windowMs: 900000, max: 10, message: 'Muitas tentativas de login. Aguarde 15 minutos.' });
 const agentLimiter = rateLimit({ windowMs: 60000, max: 60, message: 'Rate limit do agente excedido.' });
 // ─── Utilitários de criptografia (Vault) ─────────────────────────────────────
+// Compatível com o formato original: scryptSync(VAULT_KEY, 'techos-vault-salt-v1', 32)
 const ALGO = 'aes-256-cbc';
+const _vaultKey = crypto.scryptSync(VAULT_KEY, 'techos-vault-salt-v1', 32);
 
 function vaultEncrypt(text) {
-  if (!text) return text;
-  const key = crypto.scryptSync(VAULT_KEY, 'alms_salt', 32);
-  const iv  = crypto.randomBytes(16);
-  const cipher = crypto.createCipheriv(ALGO, key, iv);
-  const enc = Buffer.concat([cipher.update(String(text), 'utf8'), cipher.final()]);
-  return iv.toString('hex') + ':' + enc.toString('hex');
+  if (!text) return '';
+  const iv = crypto.randomBytes(16);
+  const cipher = crypto.createCipheriv(ALGO, _vaultKey, iv);
+  let enc = cipher.update(String(text), 'utf8', 'hex');
+  enc += cipher.final('hex');
+  return iv.toString('hex') + ':' + enc;
 }
 
 function vaultDecrypt(enc) {
   if (!enc || !enc.includes(':')) return enc;
   try {
-    const key = crypto.scryptSync(VAULT_KEY, 'alms_salt', 32);
     const [ivHex, dataHex] = enc.split(':');
     const iv = Buffer.from(ivHex, 'hex');
-    const decipher = crypto.createDecipheriv(ALGO, key, iv);
-    return Buffer.concat([decipher.update(Buffer.from(dataHex, 'hex')), decipher.final()]).toString('utf8');
-  } catch { return enc; }
+    const decipher = crypto.createDecipheriv(ALGO, _vaultKey, iv);
+    let r = decipher.update(dataHex, 'hex', 'utf8');
+    r += decipher.final('utf8');
+    return r;
+  } catch { return ''; }
 }
 
 // ─── Autenticação JWT ─────────────────────────────────────────────────────────
