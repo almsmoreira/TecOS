@@ -1,4 +1,5 @@
-import { LOGO } from "../constants";
+import { useState } from "react";
+import { LOGO, toggleTheme, getTheme } from "../constants";
 import { RoleBadge } from "./ui";
 
 const MENU = [
@@ -21,7 +22,15 @@ const MENU = [
 ];
 
 export default function Sidebar({ active, onChange, onLogout, user, collapsed, onToggle }) {
+  const [theme, setTheme] = useState(getTheme());
   const w = collapsed ? 56 : 220;
+
+  const handleToggleTheme = () => {
+    const next = toggleTheme();
+    setTheme(next);
+  };
+
+  const isDark = theme === 'dark';
 
   return (
     <div style={{
@@ -87,6 +96,32 @@ export default function Sidebar({ active, onChange, onLogout, user, collapsed, o
             <RoleBadge role={user.role} />
           </div>
         )}
+
+        {/* Toggle tema */}
+        <button
+          onClick={handleToggleTheme}
+          title={isDark ? "Mudar para tema claro" : "Mudar para tema escuro"}
+          style={{
+            display:"flex", alignItems:"center",
+            justifyContent: collapsed ? "center" : "flex-start",
+            gap: collapsed ? 0 : 8,
+            padding: collapsed ? "10px 0" : "9px 12px",
+            borderRadius:8,
+            background: "transparent",
+            color:"var(--muted)",
+            border:"1px solid transparent",
+            fontSize:13, cursor:"pointer", width:"100%",
+            marginBottom:2,
+            transition:"all .14s",
+          }}
+          onMouseEnter={e => { e.currentTarget.style.background = "var(--surface2)"; e.currentTarget.style.color = "var(--text)"; }}
+          onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "var(--muted)"; }}
+        >
+          <span style={{ fontSize:16 }}>{isDark ? "☀️" : "🌙"}</span>
+          {!collapsed && (isDark ? "Tema Claro" : "Tema Escuro")}
+        </button>
+
+        {/* Logout */}
         <button onClick={onLogout} title="Sair" style={{
           display:"flex", alignItems:"center",
           justifyContent: collapsed ? "center" : "flex-start",
@@ -94,8 +129,13 @@ export default function Sidebar({ active, onChange, onLogout, user, collapsed, o
           padding: collapsed ? "10px 0" : "9px 12px",
           borderRadius:8, background:"transparent", color:"var(--muted)",
           border:"1px solid transparent", fontSize:13, cursor:"pointer", width:"100%",
-        }}>
-          ⏻ {!collapsed && "Sair"}
+          transition:"all .14s",
+        }}
+          onMouseEnter={e => { e.currentTarget.style.background = "rgba(229,91,91,.08)"; e.currentTarget.style.color = "var(--red)"; }}
+          onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "var(--muted)"; }}
+        >
+          <span style={{ fontSize:16 }}>⏻</span>
+          {!collapsed && "Sair"}
         </button>
       </div>
     </div>
