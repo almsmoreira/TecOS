@@ -154,7 +154,7 @@ function CopyBtn({ text, label, copied, countdown, onCopy }) {
         transition: "all .15s", whiteSpace: "nowrap", minWidth: 80,
       }}
     >
-      {active ? Icon.check : Icon.copy}
+      {active ? '✅' : '📋'}
       {active ? `${countdown}s` : label}
     </button>
   );
@@ -182,9 +182,9 @@ function CredentialCard({ cred, onEdit, onDelete }) {
           <div style={{
             width: 36, height: 36, borderRadius: 10, flexShrink: 0,
             background: "rgba(79,142,247,.12)", border: "1px solid rgba(79,142,247,.2)",
-            display: "flex", alignItems: "center", justifyContent: "center", color: "#4f8ef7",
+            display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18,
           }}>
-            {Icon.key}
+            🔑
           </div>
           <div style={{ minWidth: 0 }}>
             <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 3 }}>{cred.title}</div>
@@ -196,7 +196,7 @@ function CredentialCard({ cred, onEdit, onDelete }) {
                   target="_blank" rel="noreferrer"
                   style={{ fontSize: 11, color: "var(--accent)", textDecoration: "none", display: "flex", alignItems: "center", gap: 3 }}
                 >
-                  {Icon.link} {cred.url.replace(/^https?:\/\//, '').slice(0, 30)}
+                  🔗 {cred.url.replace(/^https?:\/\//, '').slice(0, 30)}
                 </a>
               )}
             </div>
@@ -210,7 +210,7 @@ function CredentialCard({ cred, onEdit, onDelete }) {
             onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--accent)"; e.currentTarget.style.color = "var(--accent)"; }}
             onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.color = "var(--muted)"; }}
           >
-            {Icon.edit}
+            ✏️
           </button>
           <button
             onClick={() => onDelete(cred.id)}
@@ -219,7 +219,7 @@ function CredentialCard({ cred, onEdit, onDelete }) {
             onMouseEnter={e => { e.currentTarget.style.background = "rgba(229,91,91,.18)"; }}
             onMouseLeave={e => { e.currentTarget.style.background = "rgba(229,91,91,.08)"; }}
           >
-            {Icon.trash}
+            🗑️
           </button>
         </div>
       </div>
@@ -266,7 +266,7 @@ function CredentialCard({ cred, onEdit, onDelete }) {
                 display: "flex", alignItems: "center", transition: "all .15s",
               }}
             >
-              {showPwd ? Icon.eyeOff : Icon.eye}
+              {showPwd ? '🙈' : '👁️'}
             </button>
             <CopyBtn text={cred.password} label="senha" copied={copied} countdown={countdown} onCopy={copy} />
           </div>
@@ -281,7 +281,7 @@ function CredentialCard({ cred, onEdit, onDelete }) {
           borderRadius: 7, fontSize: 12, color: "var(--muted)",
           display: "flex", alignItems: "flex-start", gap: 6,
         }}>
-          <span style={{ color: "#f5c542", marginTop: 1, flexShrink: 0 }}>{Icon.note}</span>
+          <span style={{ color: "#f5c542" }}>📝</span>
           {cred.notes}
         </div>
       )}
@@ -324,7 +324,7 @@ function CredentialForm({ clientId, editing, onSave, onCancel }) {
   return (
     <div style={{ background: "var(--surface2)", border: "1px solid rgba(79,142,247,.25)", borderRadius: 12, padding: 18, marginBottom: 14 }}>
       <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 14, color: "var(--accent)", display: "flex", alignItems: "center", gap: 6 }}>
-        {editing ? Icon.edit : Icon.plus}
+        {editing ? "✏️" : "➕"}
         {editing ? "Editar Credencial" : "Nova Credencial"}
       </div>
 
@@ -377,7 +377,7 @@ function CredentialForm({ clientId, editing, onSave, onCancel }) {
                 display: "flex", alignItems: "center",
               }}
             >
-              {showPwd ? Icon.eyeOff : Icon.eye}
+              {showPwd ? '🙈' : '👁️'}
             </button>
           </div>
           <button
@@ -391,7 +391,7 @@ function CredentialForm({ clientId, editing, onSave, onCancel }) {
               whiteSpace: "nowrap", flexShrink: 0,
             }}
           >
-            {Icon.zap} Gerar
+            ⚡ Gerar
           </button>
         </div>
       </div>
@@ -415,7 +415,7 @@ function CredentialForm({ clientId, editing, onSave, onCancel }) {
           disabled={loading}
           style={{ background: "#4f8ef7", color: "#fff", border: "none", borderRadius: 7, padding: "8px 20px", fontWeight: 600, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}
         >
-          {loading ? "Salvando…" : <>{Icon.check} Salvar</>}
+          {loading ? "Salvando…" : "✅ Salvar"}
         </button>
         <button
           type="button"
@@ -483,7 +483,7 @@ function FileGrid({ files, clientId, onRefresh }) {
           disabled={uploading}
           style={{ background: "rgba(79,142,247,.12)", border: "1px solid rgba(79,142,247,.25)", color: "var(--accent)", borderRadius: 7, padding: "8px 16px", fontWeight: 600, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}
         >
-          {Icon.upload} {uploading ? "Enviando…" : "Enviar Arquivo"}
+          ⬆️ {uploading ? "Enviando…" : "Enviar Arquivo"}
         </button>
         <input ref={inputRef} type="file" accept="image/*,application/pdf" style={{ display: "none" }} onChange={upload} />
         <span style={{ fontSize: 12, color: "var(--muted)" }}>PNG, JPG, PDF · máx 10MB</span>
@@ -511,8 +511,8 @@ function FileGrid({ files, clientId, onRefresh }) {
                 <div style={{ fontSize: 11, color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={f.name}>{f.name}</div>
               </div>
               <div style={{ padding: "0 10px 10px" }} onClick={e => e.stopPropagation()}>
-                <button onClick={() => removeFile(f.id)} style={{ background: "rgba(229,91,91,.1)", border: "1px solid rgba(229,91,91,.2)", color: "#e55b5b", borderRadius: 5, padding: "3px 8px", cursor: "pointer", fontSize: 11, display: "flex", alignItems: "center", gap: 4 }}>
-                  {Icon.trash} Excluir
+                <button onClick={() => removeFile(f.id)} style={{ background: "rgba(229,91,91,.1)", border: "1px solid rgba(229,91,91,.2)", color: "#e55b5b", borderRadius: 5, padding: "3px 8px", cursor: "pointer", fontSize: 11 }}>
+                  🗑️ Excluir
                 </button>
               </div>
             </div>
@@ -535,10 +535,10 @@ function FileGrid({ files, clientId, onRefresh }) {
                   </div>
                   <div style={{ display: "flex", gap: 8 }}>
                     <button onClick={() => { const a = document.createElement("a"); a.href = viewFile.data; a.download = viewFile.name; a.click(); }} style={{ background: "rgba(79,142,247,.12)", border: "1px solid rgba(79,142,247,.25)", color: "var(--accent)", borderRadius: 7, padding: "6px 14px", cursor: "pointer", fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 5 }}>
-                      {Icon.download} Baixar
+                      ⬇️ Baixar
                     </button>
-                    <button onClick={() => setViewFile(null)} style={{ background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 7, padding: "6px 10px", cursor: "pointer", display: "flex", alignItems: "center" }}>
-                      {Icon.close}
+                    <button onClick={() => setViewFile(null)} style={{ background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 7, padding: "6px 10px", cursor: "pointer", fontSize: 18, lineHeight: 1 }}>
+                      ×
                     </button>
                   </div>
                 </div>
@@ -613,7 +613,7 @@ export default function VaultModal({ client, onClose }) {
             onMouseEnter={e => { e.currentTarget.style.color = "var(--text)"; e.currentTarget.style.borderColor = "var(--text)"; }}
             onMouseLeave={e => { e.currentTarget.style.color = "var(--muted)"; e.currentTarget.style.borderColor = "var(--border)"; }}
           >
-            {Icon.close}
+            ×
           </button>
         </div>
 
@@ -645,7 +645,7 @@ export default function VaultModal({ client, onClose }) {
               {!showForm && !editCred && (
                 <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
                   <div style={{ flex: 1, minWidth: 200, position: "relative", display: "flex", alignItems: "center" }}>
-                    <span style={{ position: "absolute", left: 10, color: "var(--muted)", display: "flex" }}>{Icon.search}</span>
+                    <span style={{ position: "absolute", left: 10, color: "var(--muted)", fontSize: 14 }}>🔍</span>
                     <input
                       value={search}
                       onChange={e => setSearch(e.target.value)}
@@ -653,7 +653,7 @@ export default function VaultModal({ client, onClose }) {
                       style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 9, color: "var(--text)", fontSize: 13, padding: "9px 14px 9px 34px", outline: "none", boxSizing: "border-box" }}
                     />
                     {search && (
-                      <button onClick={() => setSearch("")} style={{ position: "absolute", right: 8, background: "transparent", border: "none", color: "var(--muted)", cursor: "pointer", display: "flex", alignItems: "center" }}>{Icon.close}</button>
+                      <button onClick={() => setSearch("")} style={{ position: "absolute", right: 8, background: "transparent", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: 16 }}>×</button>
                     )}
                   </div>
                   <select value={filterCat} onChange={e => setFilterCat(e.target.value)} style={{ background: "var(--surface2)", border: "1px solid var(--border)", color: filterCat ? "var(--text)" : "var(--muted)", borderRadius: 9, padding: "9px 12px", fontSize: 13, cursor: "pointer" }}>
@@ -664,7 +664,7 @@ export default function VaultModal({ client, onClose }) {
                     onClick={() => setShowForm(true)}
                     style={{ background: "rgba(79,142,247,.1)", border: "1px solid rgba(79,142,247,.3)", color: "var(--accent)", borderRadius: 9, padding: "9px 16px", fontSize: 13, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}
                   >
-                    {Icon.plus} Nova
+                    ➕ Nova
                   </button>
                 </div>
               )}
