@@ -165,11 +165,7 @@ function CredentialCard({ cred, onEdit, onDelete }) {
   const [showPwd, setShowPwd] = useState(false);
   const { copied, countdown, copy } = useCopyTimeout(30);
 
-  // detecta se username/password parecem hash não descriptografado
-  const looksEncrypted = (v) => typeof v === 'string' && v.includes(':') && v.length > 60 && /^[0-9a-f]+:[0-9a-f]+$/.test(v);
 
-  const displayUser = looksEncrypted(cred.username) ? '⚠ erro de descriptografia' : cred.username;
-  const displayPass = looksEncrypted(cred.password) ? '⚠ erro de descriptografia' : cred.password;
 
   return (
     <div style={{
@@ -237,9 +233,9 @@ function CredentialCard({ cred, onEdit, onDelete }) {
               flex: 1, background: "var(--bg)", borderRadius: 7, padding: "7px 11px",
               fontSize: 13, fontFamily: "monospace", border: "1px solid var(--border)",
               overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-              color: looksEncrypted(cred.username) ? "var(--red)" : "var(--text)",
+              color: "var(--text)",
             }}>
-              {displayUser}
+              {cred.username}
             </div>
             <CopyBtn text={cred.username} label="usuário" copied={copied} countdown={countdown} onCopy={copy} />
           </div>
@@ -255,9 +251,9 @@ function CredentialCard({ cred, onEdit, onDelete }) {
               flex: 1, background: "var(--bg)", borderRadius: 7, padding: "7px 11px",
               fontSize: 13, fontFamily: "monospace", border: "1px solid var(--border)",
               overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-              color: looksEncrypted(cred.password) ? "var(--red)" : "var(--text)",
+              color: "var(--text)",
             }}>
-              {looksEncrypted(cred.password) ? displayPass : (showPwd ? cred.password : "•".repeat(Math.min(cred.password.length, 20)))}
+              {showPwd ? cred.password : "•".repeat(Math.min(cred.password.length, 20))}
             </div>
             <button
               onClick={() => setShowPwd(v => !v)}
@@ -278,7 +274,7 @@ function CredentialCard({ cred, onEdit, onDelete }) {
       )}
 
       {/* Notes */}
-      {cred.notes && !looksEncrypted(cred.notes) && (
+      {cred.notes && (
         <div style={{
           marginTop: 8, padding: "8px 11px",
           background: "rgba(245,197,66,.05)", border: "1px solid rgba(245,197,66,.15)",
